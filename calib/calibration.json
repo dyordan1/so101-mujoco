@@ -1,0 +1,30 @@
+{
+  "baby_gewu_robot": {
+    "home_pose": {
+      "shoulder_pan.pos": -4.395604395604396,
+      "shoulder_lift.pos": -102.28571428571429,
+      "elbow_flex.pos": 96.3956043956044,
+      "wrist_flex.pos": 59.69230769230769,
+      "wrist_roll.pos": 1.4505494505494505,
+      "gripper.pos": 0.20905923344947736
+    },
+    "grid": {
+      "dataset": "pick-cube-so101",
+      "pivot_xy": [0.041, 0.0012],
+      "azim_zero_deg": 4.25,
+      "reach_offset_cm": 3.77
+    }
+  },
+  "momma_gewu_robot": {
+    "_note": "The B601's home is all zeroes on purpose: its zero pose (the sit-down pose Seeed's factory calibration sets) IS the rest pose. That's how god intended it — set-home refuses to touch it. No grid: grasp geometry is a baby_gewu-only affair.",
+    "home_pose": {
+      "shoulder_pan.pos": 0.0,
+      "shoulder_lift.pos": 0.0,
+      "elbow_flex.pos": 0.0,
+      "wrist_flex.pos": 0.0,
+      "wrist_yaw.pos": 0.0,
+      "wrist_roll.pos": 0.0,
+      "gripper.pos": 0.0
+    }
+  }
+}

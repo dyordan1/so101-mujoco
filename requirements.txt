@@ -1,0 +1,11 @@
+# Sim twin generator (mujoco_record / mujoco_replay / mujoco_env)
+mujoco
+robot_descriptions
+numpy
+pandas
+pyarrow
+opencv-python
+Pillow
+lerobot
+# Policy eval in sim (mujoco_policy) also needs:
+torch
