@@ -27,7 +27,7 @@ For each real episode, `mujoco_record.py`:
 
 | Script | What |
 |---|---|
-| `scripts/download` | Pull a dataset from the Hub into `datasets/` |
+| `download.py` | Pull a dataset from the Hub into `datasets/` |
 | `scripts/train` | Finetune a SmolVLA policy → `checkpoints/` |
 | `mujoco_policy.py` | Roll a trained policy out in the sim |
 | `mujoco_replay.py` | Replay one dataset through the sim (3D viewer or camera grid) |
@@ -45,7 +45,7 @@ reproduce the real scene**:
 
 ```bash
 pip install -r requirements.txt
-scripts/download                         # dobri420/pick-cube-so101-sim -> datasets/
+python download.py                       # dobri420/pick-cube-so101-sim -> datasets/
 scripts/train                            # finetune SmolVLA -> checkpoints/  (needs a GPU)
 python mujoco_policy.py \
   checkpoints/pick-cube-so101-sim-smolvla/checkpoints/last/pretrained_model --grid

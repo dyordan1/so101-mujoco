@@ -2,7 +2,7 @@
 # Finetune a SmolVLA policy on a LeRobot dataset — no robot needed. Reads the
 # dataset from the repo-root datasets/ folder (run scripts/download first), writes
 # the checkpoint under checkpoints/ (both gitignored). Roll the result out in the
-# MuJoCo sim with mujoco_policy.py.
+# MuJoCo sim with mujoco_policy.py. Run python download.py first.
 #
 #   scripts/train [dataset-repo-id] [steps] [batch]
 #   scripts/train                                        # sim dataset, 20k steps @ 64 (LeRobot recipe)
@@ -23,7 +23,7 @@ data="$root/datasets/$name"
 out="$root/checkpoints/$name-smolvla"
 
 [ -d "$data" ] || {
-  echo "no dataset at $data — run: scripts/download $repo" >&2
+  echo "no dataset at $data — run: python download.py $repo" >&2
   exit 1
 }
 
