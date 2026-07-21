@@ -15,6 +15,7 @@ import argparse
 import json
 import math
 import os
+import random
 from pathlib import Path
 
 import mujoco.viewer
@@ -39,6 +40,13 @@ RENDER_HW = (480, 640)  # match the recorded 4:3 frames; the policy preprocessor
 AZIM_LIMIT = (
     30.0  # cube kept within ±this of straight-ahead (real workspace is centred)
 )
+# --sweep eval grid: cube placements (cm reach × deg azimuth across the workspace).
+# 15/25 cm are the trained rings, 20 the interpolation test.
+SWEEP_REACHES = (15.0, 17.5, 20.0, 22.5, 25.0)
+SWEEP_AZIMS = (-90.0, -75.0, -60.0, -45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0)
+SWEEP_TRIALS = 5  # samples per cell: 1 exact + jittered, so the rate isn't a coin flip
+SWEEP_JITTER_M = 0.02  # ±2 cm cube placement jitter (matches the dataset's dense jitter)
+SWEEP_YAW_DEG = 45.0  # ±this cube-yaw jitter; a cube is 4-fold symmetric so ±45° = all orientations
 
 
 def load_policy(ckpt, device):
@@ -140,6 +148,53 @@ def grid_display(raw):
     return cv2.waitKey(1) == 27
 
 
+def sweep(policy, pre, post, ds_meta, task, device, joints, home_deg, seconds, view=False):
+    """Roll the policy out over a reach×azimuth grid of cube placements and print the
+    success rate — the sim eval, vs a single --reach/--azim rollout. With `view`, each
+    placement plays in the mjpython 3D viewer (a fresh window per cell)."""
+    # Same jitter offsets reused for every cell (seeded → reproducible): the first is
+    # the exact placement, the rest are ±SWEEP_JITTER_M so a cell's rate reflects
+    # robustness to placement, not one lucky pose.
+    rng = random.Random(0)
+    yaw = math.radians(SWEEP_YAW_DEG)
+    offsets = [(0.0, 0.0, 0.0)] + [
+        (rng.uniform(-SWEEP_JITTER_M, SWEEP_JITTER_M),
+         rng.uniform(-SWEEP_JITTER_M, SWEEP_JITTER_M),
+         rng.uniform(-yaw, yaw))
+        for _ in range(SWEEP_TRIALS - 1)
+    ]
+    res = {}
+    for r in SWEEP_REACHES:
+        for a in SWEEP_AZIMS:
+            hits = 0
+            for dx, dy, dyaw in offsets:
+                robot = E.build_robot(joints)  # fresh spec per trial (Scene mutates it)
+                x, y = cube_xy(robot.pan_xy, r, a)
+                scene = E.Scene(
+                    joints, (x + dx, y + dy), dyaw, TOTE_XY, home_deg, robot=robot
+                )
+                args = (scene, policy, pre, post, ds_meta, task, device, joints, seconds)
+                if view:
+                    with mujoco.viewer.launch_passive(scene.model, scene.data) as viewer:
+                        viewer.opt.geomgroup[E.COLLISION_GROUP] = 0
+                        rollout(
+                            *args,
+                            display=lambda _raw: (viewer.sync(), not viewer.is_running())[1],
+                        )
+                else:
+                    rollout(*args)
+                hits += bool(scene.landed)
+            res[(r, a)] = hits
+            print(f"  reach={r:.0f} azim={a:+.0f}: {hits}/{SWEEP_TRIALS}")
+    total = len(res) * SWEEP_TRIALS
+    s = sum(res.values())
+    print(f"\nSUCCESS {s}/{total} = {100 * s / total:.0f}%")
+    print("reach\\azim " + " ".join(f"{a:+5.0f}" for a in SWEEP_AZIMS))
+    for r in SWEEP_REACHES:
+        cells = " ".join(f"{res[(r, a)]}/{SWEEP_TRIALS}".rjust(5) for a in SWEEP_AZIMS)
+        print(f"  {r:4.0f}cm  " + cells)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("checkpoint")
@@ -152,6 +207,11 @@ def main():
     ap.add_argument(
         "--grid", action="store_true", help="show the sim camera grid (cv2)"
     )
+    ap.add_argument(
+        "--sweep",
+        action="store_true",
+        help="eval: sweep a placement grid, report success rate",
+    )
     args = ap.parse_args()
 
     device = torch.device("mps" if torch.backends.mps.is_available() else "cpu")
@@ -159,6 +219,13 @@ def main():
     joints = [n.removesuffix(".pos") for n in ds_meta.features[E.OBS_STATE]["names"]]
     home = json.loads(CALIBRATION.read_text())["baby_gewu_robot"]["home_pose"]
     home_deg = [home[f"{n}.pos"] for n in joints]
+    if args.sweep:
+        sweep(
+            policy, pre, post, ds_meta, task, device, joints, home_deg,
+            args.seconds, view=args.view,
+        )
+        return
+
     azim = max(-AZIM_LIMIT, min(AZIM_LIMIT, args.azim))
     if azim != args.azim:
         print(f"azim {args.azim} clamped to ±{AZIM_LIMIT}")
