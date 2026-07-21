@@ -27,27 +27,39 @@ For each real episode, `mujoco_record.py`:
 
 | Script | What |
 |---|---|
-| `mujoco_record.py` | Record a sim twin of a dataset → `<name>-sim` |
+| `scripts/download` | Pull a dataset from the Hub into `datasets/` |
+| `scripts/train` | Finetune a SmolVLA policy → `checkpoints/` |
+| `mujoco_policy.py` | Roll a trained policy out in the sim |
 | `mujoco_replay.py` | Replay one dataset through the sim (3D viewer or camera grid) |
+| `mujoco_record.py` | Record a sim twin of a dataset → `<name>-sim` |
 | `mujoco_env.py` | The scene: SO-101 MJCF, cube/tote/distractors, cameras, FK offsets |
 | `mujoco_eval.py` | Physics-only landing-rate check over a dataset |
-| `mujoco_policy.py` | Run a trained LeRobot policy in the sim |
 | `mujoco_campose.py` | Camera-pose calibration helper |
 | `kinematics.py` | SO-101 grasp FK + grasp/release detection (no external deps) |
 
-## Running
+## Train and test a policy — no robot required
 
-Requires Python 3.12 and the packages in `requirements.txt` (MuJoCo, LeRobot,
-`robot_descriptions`, OpenCV; `torch` only for `mujoco_policy.py`):
+Because both the data and the environment are in this loop, you can train a
+policy on the sim dataset and evaluate it in the sim, with **no arm and no need to
+reproduce the real scene**:
 
 ```bash
 pip install -r requirements.txt
-python mujoco_record.py <dataset-name>   # reads datasets/<name>, writes datasets/<name>-sim
+scripts/download                         # dobri420/pick-cube-so101-sim -> datasets/
+scripts/train                            # finetune SmolVLA -> checkpoints/  (needs a GPU)
+python mujoco_policy.py \
+  checkpoints/pick-cube-so101-sim-smolvla/checkpoints/last/pretrained_model --grid
 ```
 
-`datasets/<name>` is a LeRobot v3.0 dataset directory (the scripts expect a
-sibling `datasets/` dir). The SO-101 MJCF comes from `robot_descriptions`; the
-finger/wrist-mount meshes and backdrops are in `assets/`.
+`scripts/train` wraps `lerobot-train` with the SmolVLA recipe (20k steps @ batch
+64 by default; `scripts/train <repo> <steps> <batch>` to change, `DEVICE=` to pick
+the device). `mujoco_policy.py` places the cube at a grid spot and lets the policy
+drive — `--reach`/`--azim` move the cube, `--view` shows the 3D viewer, `--grid`
+shows the three camera feeds.
+
+`datasets/` and `checkpoints/` sit at the repo root and are gitignored; the SO-101
+MJCF comes from `robot_descriptions`, the finger/wrist-mount meshes and backdrops
+from `assets/`.
 
 ## Calibration
 

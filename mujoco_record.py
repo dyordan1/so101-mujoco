@@ -19,6 +19,7 @@ Runs under plain python (no GUI). Requires the repo dev shell.
 
 import argparse
 import json
+import os
 import shutil
 from pathlib import Path
 
@@ -28,6 +29,9 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from mujoco_replay import build, run_headless
 
 HERE = Path(__file__).resolve().parent
+# Repo-root datasets/ (gitignored). DATASETS_DIR points it elsewhere — the monorepo
+# wrapper sets it to the shared jepa/datasets/ tree the real recordings live in.
+DATASETS = Path(os.environ.get("DATASETS_DIR", HERE / "datasets"))
 FPS = 30
 RENDER_HW = (480, 640)
 IMAGE_FEATURE = {
@@ -56,10 +60,10 @@ def main():
     )
     args = ap.parse_args()
 
-    src_root = str(HERE / ".." / "datasets" / args.name)
+    src_root = str(DATASETS / args.name)
     src_repo = f"baby_gewu/{args.name}"
     out_name = f"{args.name}-sim"
-    out_root = HERE / ".." / "datasets" / out_name
+    out_root = DATASETS / out_name
     info = json.loads((Path(src_root) / "meta/info.json").read_text())
     n = args.limit or info["total_episodes"]
     task = pd.read_parquet(Path(src_root) / "meta/tasks.parquet").index[0]

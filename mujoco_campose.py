@@ -15,6 +15,7 @@ FOV:    -/= · Esc quit. The pose line prints each keypress — copy the last on
 """
 
 import math
+import os
 import sys
 from pathlib import Path
 
@@ -27,7 +28,8 @@ import mujoco_env as E
 from mujoco_replay import build
 
 WIN = (600, 800)  # (height, width)
-ROOT = str(Path(__file__).resolve().parent.parent / "datasets/pick-cube-so101")
+_DATASETS = Path(os.environ.get("DATASETS_DIR", Path(__file__).resolve().parent / "datasets"))
+ROOT = str(_DATASETS / "pick-cube-so101")
 STEP_PAN = 0.005  # m per keypress
 STEP_ROT = 0.75  # deg per keypress
 STEP_FOV = 0.25  # deg per keypress

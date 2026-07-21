@@ -14,6 +14,7 @@ renders → observation, policy action → scene.step).
 import argparse
 import json
 import math
+import os
 from pathlib import Path
 
 import mujoco.viewer
@@ -29,7 +30,9 @@ from lerobot.utils.feature_utils import build_dataset_frame
 import mujoco_env as E
 
 HERE = Path(__file__).resolve().parent
-DATASETS = HERE / ".." / "datasets"
+# Repo-root datasets/ (gitignored); DATASETS_DIR overrides it (the monorepo wrapper
+# points it at the shared jepa/datasets/ tree).
+DATASETS = Path(os.environ.get("DATASETS_DIR", HERE / "datasets"))
 CALIBRATION = HERE / "calib" / "calibration.json"
 TOTE_XY = (0.0, -0.384)  # measured release cluster centre (m)
 RENDER_HW = (480, 640)  # match the recorded 4:3 frames; the policy preprocessor resizes
@@ -41,11 +44,14 @@ AZIM_LIMIT = (
 def load_policy(ckpt, device):
     """Load policy + saved pre/post processors, repinned to `device`. Mirrors
     eval-policy.py's load (the real-arm path), touches no hardware."""
-    dataset = json.loads(Path(ckpt, "train_config.json").read_text())["dataset"][
+    repo_id = json.loads(Path(ckpt, "train_config.json").read_text())["dataset"][
         "repo_id"
-    ].split("/")[-1]
+    ]
+    # Use the checkpoint's own repo_id; read from a local datasets/<name> copy if one
+    # exists (downloaded or monorepo-shared), else let LeRobot pull it from the Hub.
+    local = DATASETS / repo_id.split("/")[-1]
     ds_meta = LeRobotDatasetMetadata(
-        f"baby_gewu/{dataset}", root=str(DATASETS / dataset)
+        repo_id, root=str(local) if local.exists() else None
     )
     cfg = PreTrainedConfig.from_pretrained(ckpt)
     cfg.pretrained_path = ckpt

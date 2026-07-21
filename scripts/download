@@ -1,0 +1,21 @@
+#!/usr/bin/env bash
+# Pull a LeRobot dataset from the Hugging Face Hub into the repo-root datasets/
+# folder (gitignored), where train + mujoco_policy read it. No robot required.
+#
+#   scripts/download [dataset-repo-id]
+#   scripts/download                            # dobri420/pick-cube-so101-sim (default)
+#   scripts/download dobri420/pick-cube-so101   # the real dataset instead
+set -euo pipefail
+
+repo=${1:-dobri420/pick-cube-so101-sim}
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+dest="$root/datasets/${repo##*/}"
+
+python - "$repo" "$dest" <<'PY'
+import sys
+from huggingface_hub import snapshot_download
+
+repo, dest = sys.argv[1], sys.argv[2]
+snapshot_download(repo_id=repo, repo_type="dataset", local_dir=dest)
+print(f"downloaded {repo} -> {dest}")
+PY

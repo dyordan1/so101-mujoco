@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Finetune a SmolVLA policy on a LeRobot dataset — no robot needed. Reads the
+# dataset from the repo-root datasets/ folder (run scripts/download first), writes
+# the checkpoint under checkpoints/ (both gitignored). Roll the result out in the
+# MuJoCo sim with mujoco_policy.py.
+#
+#   scripts/train [dataset-repo-id] [steps] [batch]
+#   scripts/train                                        # sim dataset, 20k steps @ 64 (LeRobot recipe)
+#   scripts/train dobri420/pick-cube-so101-sim 5000 32   # shorter smoke run
+#
+# DEVICE=cpu|mps|cuda overrides the training device (default cuda — SmolVLA
+# finetuning wants a GPU; that's the only hardware you need, no arm).
+set -euo pipefail
+
+repo=${1:-dobri420/pick-cube-so101-sim}
+steps=${2:-20000}
+batch=${3:-64}
+device=${DEVICE:-cuda}
+
+root=$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)
+name=${repo##*/}
+data="$root/datasets/$name"
+out="$root/checkpoints/$name-smolvla"
+
+[ -d "$data" ] || {
+  echo "no dataset at $data — run: scripts/download $repo" >&2
+  exit 1
+}
+
+lerobot-train \
+  --dataset.repo_id="$repo" \
+  --dataset.root="$data" \
+  --policy.path=lerobot/smolvla_base \
+  --policy.device="$device" \
+  --policy.push_to_hub=false \
+  --output_dir="$out" \
+  --job_name="$name-smolvla" \
+  --batch_size="$batch" \
+  --steps="$steps" \
+  --save_freq="$steps" \
+  --wandb.enable=false
+
+echo
+echo "checkpoint: $out/checkpoints/last/pretrained_model"
+echo "roll it out in sim:"
+echo "  python mujoco_policy.py $out/checkpoints/last/pretrained_model --grid"
