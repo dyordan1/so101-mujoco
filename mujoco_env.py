@@ -25,9 +25,19 @@ between the tightest recorded grasp and the loosest release. The cube is 4 mm un
 
 import json
 import math
+import os
 import struct
+import sys
 from collections import namedtuple
 from pathlib import Path
+
+# Headless Linux (GPU nodes) has no X display, so MuJoCo's default GLFW backend
+# fails `gladLoadGL` the moment anything renders (the policy sweep / camera grid).
+# Select the offscreen EGL backend automatically — set before `import mujoco`,
+# guarded so an explicit MUJOCO_GL wins and the macOS interactive viewer (Cocoa,
+# no DISPLAY) is untouched. Reproducible: no env var to remember at launch.
+if sys.platform == "linux" and not os.environ.get("DISPLAY"):
+    os.environ.setdefault("MUJOCO_GL", "egl")
 
 import mujoco
 import numpy as np

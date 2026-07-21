@@ -185,7 +185,10 @@ def sweep(policy, pre, post, ds_meta, task, device, joints, home_deg, seconds, v
                     rollout(*args)
                 hits += bool(scene.landed)
             res[(r, a)] = hits
-            print(f"  reach={r:.0f} azim={a:+.0f}: {hits}/{SWEEP_TRIALS}")
+            # flush per cell: the 65 lines fit under one stdout block buffer, so
+            # without this a redirected sweep shows nothing until it exits — no
+            # live progress on a long headless run.
+            print(f"  reach={r:.0f} azim={a:+.0f}: {hits}/{SWEEP_TRIALS}", flush=True)
     total = len(res) * SWEEP_TRIALS
     s = sum(res.values())
     print(f"\nSUCCESS {s}/{total} = {100 * s / total:.0f}%")
