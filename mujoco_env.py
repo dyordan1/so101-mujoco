@@ -15,7 +15,8 @@ Public surface:
         .welded / .landed  + .model .data for viewers
 
 The grasp is a deterministic weld: the cube welds on a 2-point (face) contact with both
-finger-only hulls while the gripper is closed past GRIP_WELD_MAX, and — once welded — stays
+finger-only hulls pressing OPPOSING cube faces (never adjacent — see WELD_OPPOSING_COS)
+while the gripper is closed past GRIP_WELD_MAX, and — once welded — stays
 welded until the gripper opens back past it (weld latch: contact ignored while gripped, so a
 firm grip survives a transient blip when the arm jerks). The threshold sits in the clean gap
 between the tightest recorded grasp and the loosest release. The cube is 4 mm under the real
@@ -127,6 +128,10 @@ CUBE_FRICTION = [0.6, 0.005, 0.0001]
 CUBE_PRIORITY = 1
 GRIP_KP, GRIP_FORCE = 50.0, 5.0  # gripper actuator stiffness + force cap (N·m)
 GRIP_WELD_MAX = 16.0  # weld active only while the gripper .pos is at/below this
+# The two jaws must pinch OPPOSING cube faces, not adjacent ones: require their
+# pressed-face outward normals to point apart by ≥120° (dot ≤ this). A true
+# parallel-jaw pinch is ~180° (dot ≈ -1); adjacent faces are ~90° (dot ≈ 0).
+WELD_OPPOSING_COS = -0.5
 SHOW_GRASP_MARKER = False  # debug: green sphere at the cube-spawn point on the gripper
 
 # Camera vertical FOV (deg) matched to hardware: recorded 640×480 is a center-crop of the
@@ -675,12 +680,17 @@ class Scene:
                     target[self.grip_i], self._weld_jaw_pos
                 )
             mujoco.mj_step(self.model, self.data)
-            if not self.welded:
-                if (
-                    gripping
-                    and _contact_points(self.data, self._cube_geom, self._upper) >= 2
-                    and _touching(self.data, self._cube_geom, self._lower)
-                ):
+            if not self.welded and gripping:
+                cube_c = self.data.geom_xpos[self._cube_geom]
+                up_n, up_c = _cube_face_normal(
+                    self.data, self._cube_geom, self._upper, cube_c
+                )
+                lo_n, lo_c = _cube_face_normal(
+                    self.data, self._cube_geom, self._lower, cube_c
+                )
+                # weld only on a real pinch: ≥2 points on one jaw, ≥1 on the other,
+                # and the two jaws pressing OPPOSING faces (not adjacent — a corner)
+                if up_c >= 2 and lo_c >= 1 and up_n @ lo_n <= WELD_OPPOSING_COS:
                     _weld_cube(self.model, self.data, self._grip_bid, self._cube_bid)
                     self._weld_jaw_pos = float(self.data.qpos[self._grip_qadr])
                     self.welded = True
@@ -719,6 +729,30 @@ def _contact_points(data, geom_a, geom_b):
 
 def _touching(data, geom_a, geom_b):
     return _contact_points(data, geom_a, geom_b) > 0
+
+
+def _cube_face_normal(data, cube_geom, finger_geom, cube_center):
+    """(mean outward face normal, contact count) for the cube↔finger contacts.
+    Each contact normal is flipped to point from the cube center toward the
+    contact, so it reads as the pressed cube face's outward normal — regardless
+    of MuJoCo's geom-order sign convention. Returns (None, 0) if they don't touch."""
+    acc, n = np.zeros(3), 0
+    for c in range(data.ncon):
+        con = data.contact[c]
+        g1, g2 = con.geom1, con.geom2
+        if not (
+            (g1 == cube_geom and g2 == finger_geom)
+            or (g1 == finger_geom and g2 == cube_geom)
+        ):
+            continue
+        normal = con.frame[:3].copy()
+        if normal @ (con.pos - cube_center) < 0:
+            normal = -normal
+        acc += normal
+        n += 1
+    if n == 0:
+        return None, 0
+    return acc / np.linalg.norm(acc), n
 
 
 def _weld_cube(model, data, grip_bid, cube_bid):
