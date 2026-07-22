@@ -105,6 +105,10 @@ DISTRACTOR_CYLINDER, DISTRACTOR_TORUS, DISTRACTOR_MONKE = "cylinder", "torus", "
 DISTRACTOR_KINDS = (DISTRACTOR_CYLINDER, DISTRACTOR_TORUS, DISTRACTOR_MONKE)
 DISTRACTOR_RGBA = CUBE_RGBA  # same colour as the cube (#5D70C9)
 DISTRACTOR_FRICTION = [1.0, 0.05, 0.01]
+DISTRACTOR_REACH_CM = (15.0, 30.0)  # placed in the cube's polar fan off the pan axis
+DISTRACTOR_AZIM_DEG = 90.0
+CUBE_SAFE_RADIUS = 0.03  # 6 cm no-distractor zone around the cube
+DISTRACTOR_SPACING = 0.045  # min gap between distractors
 CYL_R, CYL_HALFH = 0.013, 0.013  # bbox 2.6³ cm, == the cube
 TORUS_R, TORUS_TUBE = (
     0.012,
@@ -465,6 +469,28 @@ def _add_distractor(spec, name, kind, x, y, yaw):
         **geom,
     )
     return [*pos, *yaw_quat(yaw)]
+
+
+def sample_distractors(count, cube_xy, pan_xy, rng):
+    """`count` distractors at random (reach, azimuth) in the cube's fan, avoiding a 6 cm
+    zone around the cube and each other. Distinct kinds. Returns [(kind, x, y, yaw)]."""
+    kinds = list(DISTRACTOR_KINDS)
+    rng.shuffle(kinds)
+    placed = []
+    for kind in kinds[:count]:
+        for _ in range(200):
+            x, y = polar_xy(
+                pan_xy,
+                rng.uniform(*DISTRACTOR_REACH_CM),
+                rng.uniform(-DISTRACTOR_AZIM_DEG, DISTRACTOR_AZIM_DEG),
+            )
+            if math.hypot(x - cube_xy[0], y - cube_xy[1]) < CUBE_SAFE_RADIUS:
+                continue
+            if any(math.hypot(x - p[1], y - p[2]) < DISTRACTOR_SPACING for p in placed):
+                continue
+            placed.append((kind, x, y, rng.uniform(0, 2 * math.pi)))
+            break
+    return placed
 
 
 # --------------------------------------------------------------------- public FK / build ---

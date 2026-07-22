@@ -13,7 +13,6 @@ python (cv2's Cocoa GUI can't share mjpython's loop) — the wrapper picks the i
 """
 
 import argparse
-import math
 import time
 
 import mujoco
@@ -28,33 +27,6 @@ from kinematics import (
 from lerobot.datasets import LeRobotDataset
 
 import mujoco_env as E
-
-DISTRACTOR_REACH_CM = (15.0, 30.0)  # placed in the cube's polar fan off the pan axis
-DISTRACTOR_AZIM_DEG = 90.0
-CUBE_SAFE_RADIUS = 0.03  # 6 cm no-distractor zone around the cube
-DISTRACTOR_SPACING = 0.045  # min gap between distractors
-
-
-def sample_distractors(count, cube_xy, pan_xy, rng):
-    """`count` distractors at random (reach, azimuth) in the cube's fan, avoiding a 6 cm
-    zone around the cube and each other. Distinct kinds. Returns [(kind, x, y, yaw)]."""
-    kinds = list(E.DISTRACTOR_KINDS)
-    rng.shuffle(kinds)
-    placed = []
-    for kind in kinds[:count]:
-        for _ in range(200):
-            x, y = E.polar_xy(
-                pan_xy,
-                rng.uniform(*DISTRACTOR_REACH_CM),
-                rng.uniform(-DISTRACTOR_AZIM_DEG, DISTRACTOR_AZIM_DEG),
-            )
-            if math.hypot(x - cube_xy[0], y - cube_xy[1]) < CUBE_SAFE_RADIUS:
-                continue
-            if any(math.hypot(x - p[1], y - p[2]) < DISTRACTOR_SPACING for p in placed):
-                continue
-            placed.append((kind, x, y, rng.uniform(0, 2 * math.pi)))
-            break
-    return placed
 
 
 def build(repo_id, root, episode):
@@ -76,7 +48,7 @@ def build(repo_id, root, episode):
         robot.model, release_frame(traj, E.GRIP_WELD_MAX), robot.offsets
     )
     count = episode_distractors(root).get(episode, 0)
-    distractors = sample_distractors(
+    distractors = E.sample_distractors(
         count, (gx, gy), robot.pan_xy, np.random.default_rng(episode)
     )
     scene = E.Scene(
