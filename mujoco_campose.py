@@ -2,7 +2,7 @@
 """Live cv2 view to align a scene camera to its real reference. Flies a full 6-DOF camera
 over episode 0's scene and prints its pose so you can copy it back into mujoco_env.
 
-    jepa/scripts/mujoco-campose [top|side|wrist]     (default top)
+    python mujoco_campose.py [top|side|wrist]     (default top)
 
 top/side fly a fixed scene camera composited over its backdrop photo; the printed
 pos/target/roll go into CAM_OVERHEAD / CAM_SIDE. wrist flies the gripper-mounted camera
@@ -70,7 +70,7 @@ def main():
     which = {"top": "overhead", "side": "side", "wrist": "wrist"}.get(
         sys.argv[1] if len(sys.argv) > 1 else "top", "overhead"
     )
-    scene, dataset, traj = build("baby_gewu/pick-cube-so101", ROOT, 0)
+    scene, dataset, traj = build("dobri420/pick-cube-so101", ROOT, 0)
     scene.reset()
     for frame in traj[:REF_FRAME]:  # step in so the arm is over the desk
         scene.step(frame)

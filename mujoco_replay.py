@@ -6,10 +6,11 @@ the tote at its release frame → drive the arm to the recorded trajectory. All 
 construction + physics live in mujoco_env; this file only decides placement (from the
 recording) and control (the recorded joint targets), then displays the result.
 
-    jepa/scripts/mujoco-replay <name> [episode] [--grid]
+    mjpython mujoco_replay.py <name> [episode]          # 3D viewer
+    python   mujoco_replay.py <name> [episode] --grid   # camera grid
 
 The 3D viewer runs under mjpython (macOS main-thread); the camera grid runs under plain
-python (cv2's Cocoa GUI can't share mjpython's loop) — the wrapper picks the interpreter.
+python (cv2's Cocoa GUI can't share mjpython's loop).
 """
 
 import argparse

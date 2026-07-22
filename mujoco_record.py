@@ -12,9 +12,9 @@ only if it did — again with rendering to write the frames. Episodes that never
 are DROPPED, so the twin has fewer than the source's episodes, by design (a sim-fidelity
 filter). The kept episodes are renumbered 0..N-1.
 
-    jepa/scripts/mujoco-record <name> [limit]   # limit>0: first N episodes; else all
+    python mujoco_record.py <name> [limit]   # limit>0: first N episodes; else all
 
-Runs under plain python (no GUI). Requires the repo dev shell.
+Runs under plain python (no GUI).
 """
 
 import argparse
@@ -29,8 +29,7 @@ from lerobot.datasets.lerobot_dataset import LeRobotDataset
 from mujoco_replay import build, run_headless
 
 HERE = Path(__file__).resolve().parent
-# Repo-root datasets/ (gitignored). DATASETS_DIR points it elsewhere — the monorepo
-# wrapper sets it to the shared jepa/datasets/ tree the real recordings live in.
+# Repo-root datasets/ (gitignored); DATASETS_DIR overrides it.
 DATASETS = Path(os.environ.get("DATASETS_DIR", HERE / "datasets"))
 FPS = 30
 RENDER_HW = (480, 640)
@@ -61,7 +60,7 @@ def main():
     args = ap.parse_args()
 
     src_root = str(DATASETS / args.name)
-    src_repo = f"baby_gewu/{args.name}"
+    src_repo = f"dobri420/{args.name}"
     out_name = f"{args.name}-sim"
     out_root = DATASETS / out_name
     info = json.loads((Path(src_root) / "meta/info.json").read_text())
@@ -71,7 +70,7 @@ def main():
     if out_root.exists():
         shutil.rmtree(out_root)
     sim = LeRobotDataset.create(
-        repo_id=f"baby_gewu/{out_name}",
+        repo_id=f"dobri420/{out_name}",
         fps=FPS,
         features=features_for(info["features"]["observation.state"]["names"]),
         root=str(out_root),

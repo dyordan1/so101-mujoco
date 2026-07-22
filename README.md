@@ -64,7 +64,7 @@ from `assets/`.
 ## Calibration
 
 `calib/` ships the exact SO-101 calibration used to generate the published sim
-twin — `baby_gewu_robot.json` (per-joint encoder offsets → model frame) and
+twin — `so101_robot.json` (per-joint encoder offsets → model frame) and
 `calibration.json` (home pose). Swap these for your own arm's calibration to
 reproduce against a different SO-101.
 

@@ -1,12 +1,12 @@
 #!/usr/bin/env python
-"""Roll out a trained SmolVLA policy in the MuJoCo SO-101 env.
+"""Roll out a trained policy in the MuJoCo SO-101 env.
 
 Dumb consumer of mujoco_env: place the cube at a chosen grid spot + the tote at its
 cluster, then let the policy drive. All scene construction + physics live in mujoco_env;
 this file only samples placement, loads the policy, and does the sim↔policy glue (sim
 renders → observation, policy action → scene.step).
 
-    jepa/scripts/mujoco-policy <checkpoint> [--reach CM] [--azim DEG] [--view] [--seconds N]
+    python mujoco_policy.py <checkpoint> [--reach CM] [--azim DEG] [--view] [--seconds N]
 
 --view shows the mjpython 3D viewer; default is headless. Non-realtime (CPU/MPS inference).
 """
@@ -22,17 +22,16 @@ import mujoco.viewer
 import numpy as np
 import torch
 from lerobot.common.control_utils import predict_action
-from lerobot.configs.policies import PreTrainedConfig
 from lerobot.datasets.lerobot_dataset import LeRobotDatasetMetadata
-from lerobot.policies.factory import make_policy, make_pre_post_processors
 from lerobot.utils.constants import OBS_STR
 from lerobot.utils.feature_utils import build_dataset_frame
 
+import model_adapter  # sibling: loads a checkpoint in either supported layout
 import mujoco_env as E
 
 HERE = Path(__file__).resolve().parent
-# Repo-root datasets/ (gitignored); DATASETS_DIR overrides it (the monorepo wrapper
-# points it at the shared jepa/datasets/ tree).
+
+# Repo-root datasets/ (gitignored); DATASETS_DIR overrides it.
 DATASETS = Path(os.environ.get("DATASETS_DIR", HERE / "datasets"))
 CALIBRATION = HERE / "calib" / "calibration.json"
 TOTE_XY = (0.0, -0.384)  # measured release cluster centre (m)
@@ -43,10 +42,28 @@ AZIM_LIMIT = (
 # --sweep eval grid: cube placements (cm reach × deg azimuth across the workspace).
 # 15/25 cm are the trained rings, 20 the interpolation test.
 SWEEP_REACHES = (15.0, 17.5, 20.0, 22.5, 25.0)
-SWEEP_AZIMS = (-90.0, -75.0, -60.0, -45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0, 60.0, 75.0, 90.0)
+SWEEP_AZIMS = (
+    -90.0,
+    -75.0,
+    -60.0,
+    -45.0,
+    -30.0,
+    -15.0,
+    0.0,
+    15.0,
+    30.0,
+    45.0,
+    60.0,
+    75.0,
+    90.0,
+)
 SWEEP_TRIALS = 5  # samples per cell: 1 exact + jittered, so the rate isn't a coin flip
-SWEEP_JITTER_M = 0.02  # ±2 cm cube placement jitter (matches the dataset's dense jitter)
-SWEEP_YAW_DEG = 45.0  # ±this cube-yaw jitter; a cube is 4-fold symmetric so ±45° = all orientations
+SWEEP_JITTER_M = (
+    0.02  # ±2 cm cube placement jitter (matches the dataset's dense jitter)
+)
+SWEEP_YAW_DEG = (
+    45.0  # ±this cube-yaw jitter; a cube is 4-fold symmetric so ±45° = all orientations
+)
 
 
 def load_policy(ckpt, device):
@@ -56,21 +73,15 @@ def load_policy(ckpt, device):
         "repo_id"
     ]
     # Use the checkpoint's own repo_id; read from a local datasets/<name> copy if one
-    # exists (downloaded or monorepo-shared), else let LeRobot pull it from the Hub.
+    # exists (downloaded), else let LeRobot pull it from the Hub.
     local = DATASETS / repo_id.split("/")[-1]
     ds_meta = LeRobotDatasetMetadata(
         repo_id, root=str(local) if local.exists() else None
     )
-    cfg = PreTrainedConfig.from_pretrained(ckpt)
-    cfg.pretrained_path = ckpt
-    cfg.device = str(device)
-    cfg.compile_model = False
-    policy = make_policy(cfg, ds_meta=ds_meta, rename_map={})
-    policy.eval()
-    pre, post = make_pre_post_processors(
-        cfg,
-        pretrained_path=ckpt,
-        preprocessor_overrides={"device_processor": {"device": str(device)}},
+    # model_adapter loads a checkpoint in either supported layout into a uniform
+    # LeRobot policy this sim loop drives unchanged.
+    policy, pre, post, _cfg = model_adapter.load_policy(
+        ckpt, ds_meta, device, compile_model=False
     )
     return policy, pre, post, ds_meta, ds_meta.tasks.index.tolist()[0]
 
@@ -149,8 +160,17 @@ def grid_display(raw):
 
 
 def sweep(
-    policy, pre, post, ds_meta, task, device, joints, home_deg, seconds,
-    view=False, distractors=0,
+    policy,
+    pre,
+    post,
+    ds_meta,
+    task,
+    device,
+    joints,
+    home_deg,
+    seconds,
+    view=False,
+    distractors=0,
 ):
     """Roll the policy out over a reach×azimuth grid of cube placements and print the
     success rate — the sim eval, vs a single --reach/--azim rollout. With `view`, each
@@ -162,9 +182,11 @@ def sweep(
     rng = random.Random(0)
     yaw = math.radians(SWEEP_YAW_DEG)
     offsets = [(0.0, 0.0, 0.0)] + [
-        (rng.uniform(-SWEEP_JITTER_M, SWEEP_JITTER_M),
-         rng.uniform(-SWEEP_JITTER_M, SWEEP_JITTER_M),
-         rng.uniform(-yaw, yaw))
+        (
+            rng.uniform(-SWEEP_JITTER_M, SWEEP_JITTER_M),
+            rng.uniform(-SWEEP_JITTER_M, SWEEP_JITTER_M),
+            rng.uniform(-yaw, yaw),
+        )
         for _ in range(SWEEP_TRIALS - 1)
     ]
     res = {}
@@ -175,21 +197,43 @@ def sweep(
                 robot = E.build_robot(joints)  # fresh spec per trial (Scene mutates it)
                 x, y = cube_xy(robot.pan_xy, r, a)
                 clutter = E.sample_distractors(
-                    distractors, (x + dx, y + dy), robot.pan_xy,
+                    distractors,
+                    (x + dx, y + dy),
+                    robot.pan_xy,
                     # +90 keeps the seed non-negative (azim spans -90..90); distinct per cell/trial
                     np.random.default_rng((int(r), int(a) + 90, k)),
                 )
                 scene = E.Scene(
-                    joints, (x + dx, y + dy), dyaw, TOTE_XY, home_deg, robot=robot,
+                    joints,
+                    (x + dx, y + dy),
+                    dyaw,
+                    TOTE_XY,
+                    home_deg,
+                    robot=robot,
                     distractors=clutter,
                 )
-                args = (scene, policy, pre, post, ds_meta, task, device, joints, seconds)
+                args = (
+                    scene,
+                    policy,
+                    pre,
+                    post,
+                    ds_meta,
+                    task,
+                    device,
+                    joints,
+                    seconds,
+                )
                 if view:
-                    with mujoco.viewer.launch_passive(scene.model, scene.data) as viewer:
+                    with mujoco.viewer.launch_passive(
+                        scene.model, scene.data
+                    ) as viewer:
                         viewer.opt.geomgroup[E.COLLISION_GROUP] = 0
                         rollout(
                             *args,
-                            display=lambda _raw: (viewer.sync(), not viewer.is_running())[1],
+                            display=lambda _raw: (
+                                viewer.sync(),
+                                not viewer.is_running(),
+                            )[1],
                         )
                 else:
                     rollout(*args)
@@ -238,12 +282,21 @@ def main():
         device = torch.device("cpu")
     policy, pre, post, ds_meta, task = load_policy(args.checkpoint, device)
     joints = [n.removesuffix(".pos") for n in ds_meta.features[E.OBS_STATE]["names"]]
-    home = json.loads(CALIBRATION.read_text())["baby_gewu_robot"]["home_pose"]
+    home = json.loads(CALIBRATION.read_text())["so101_robot"]["home_pose"]
     home_deg = [home[f"{n}.pos"] for n in joints]
     if args.sweep:
         sweep(
-            policy, pre, post, ds_meta, task, device, joints, home_deg,
-            args.seconds, view=args.view, distractors=args.distractors,
+            policy,
+            pre,
+            post,
+            ds_meta,
+            task,
+            device,
+            joints,
+            home_deg,
+            args.seconds,
+            view=args.view,
+            distractors=args.distractors,
         )
         return
 
@@ -260,7 +313,12 @@ def main():
     pool = list(E.DISTRACTOR_KINDS)
     PARK = (5.0, 5.0, 0.0)  # far off-scene: outside every camera, harmless
     scene = E.Scene(
-        joints, cxy, 0.0, TOTE_XY, home_deg, robot=robot,
+        joints,
+        cxy,
+        0.0,
+        TOTE_XY,
+        home_deg,
+        robot=robot,
         distractors=[(k, PARK[0], PARK[1], PARK[2]) for k in pool],
     )
     print(

@@ -12,9 +12,9 @@ Failures split two ways, both worth knowing:
   - missed: the cube was released but never reached the tote floor (it slipped early,
     was dropped short, or bounced out — the interesting, non-grasp divergences).
 
-    jepa/scripts/mujoco-eval <name> [sample]   # sample>0: random subset (seed 0); else all
+    python mujoco_eval.py <name> [sample]   # sample>0: random subset (seed 0); else all
 
-Runs under plain python (no viewer/GUI). Requires the repo dev shell.
+Runs under plain python (no viewer/GUI).
 """
 
 import argparse

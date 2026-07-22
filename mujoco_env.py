@@ -79,7 +79,7 @@ CAM_FACE_CORNERS = np.array(
     ]
 )
 
-CALIBRATION = Path(__file__).resolve().parent / "calib/baby_gewu_robot.json"
+CALIBRATION = Path(__file__).resolve().parent / "calib/so101_robot.json"
 ENCODER_RES = 4096  # STS3215 12-bit encoder (lerobot feetech table)
 
 CUBE_EDGE = 0.026  # m — 4 mm under the real 3 cm (stands in for grasp compliance)

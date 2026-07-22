@@ -1,39 +1,21 @@
 #!/usr/bin/env python
 """MJX (MuJoCo-XLA) physics backend for the SO-101 pick-cube twin.
 
-==============================================================================
-⚠️  PARKED — CLEARLY BROKEN ON PERFORMANCE. GET BACK TO THIS.  (2026-07-22)
-==============================================================================
-Correctness is GOOD: single-env fidelity ep0 matches C-MuJoCo (grasp→weld→
-release→land), and MJX's convex-mesh contacts drive the weld gate (over-counts
-points 8 vs 4, but the gate is a lower-bound threshold so it fires either way).
+EXPERIMENTAL — not yet performant, kept for reference; the recording/eval paths
+use the C-MuJoCo backend (mujoco_env.py), not this one.
 
-PERFORMANCE IS A DISASTER: batched fidelity on a 4090 (9jian, mujoco 3.10 +
-mujoco-mjx 3.10 + jax[cuda12]) ran **128 episodes in >73 min, GPU pegged**, vs
-C-MuJoCo run_headless doing the same 128 in **84 s** on the laptop — ~50× SLOWER.
-So the batching win does not exist yet; the naive port loses badly.
-
-Prime suspects (fix before trusting any number):
-  1. `base.replace(eq_data=eq_data)` PER SUBSTEP (see substep()) makes the whole
-     Model pytree loop-varying through the scan — breaks MJX's core assumption
-     that the model is a compile-time constant and only Data flows. Almost
-     certainly the main killer. Fix: get the weld transform OUT of the model —
-     set it in Data, or use a kinematic/mocap weld — so the model stays constant.
-  2. Dense mesh collision over the arm's 16 convex meshes every step (mjx does
-     GJK across all enabled pairs; C-MuJoCo has broadphase + specialised paths).
-     Fix: disable collision on the non-finger arm links (they follow recorded
-     joints, never touch the cube) to slash per-step cost.
-  3. XLA autotuner OOMs at ~19 GB → forced --xla_gpu_autotune_level=0 → slow
-     default kernels. Once (1)+(2) cut memory, turn autotune back on.
-
-Also unresolved: this mjx build has NO cylinder-box collision (NotImplementedError),
-so the cylinder distractor must become a mesh (or be excluded) for the full 540-ep
-set — the batched harness currently runs only the 440 zero-distractor episodes.
-
-The plan needs changes to the mujoco lib itself (weld representation, arm-link
-collision flags), hence parked here until those land. Harness lives in
-scratchpad (mjx_valbench.py: per-env qpos, vmap, chunked, parity vs C baseline).
-==============================================================================
+Single-env correctness matches the C backend (grasp→weld→release→land), but the
+naive batched port is much slower than the C backend rather than faster, so it
+is not usable yet. Known issues to resolve before relying on it:
+  1. The weld transform is set on the model pytree per substep (see substep()),
+     which makes MJX treat the model as loop-varying — it should live in Data so
+     the model stays a compile-time constant.
+  2. Dense mesh collision runs over every arm link each step; disable collision
+     on the non-finger links (they follow recorded joints and never touch the
+     cube) to cut per-step cost.
+  3. The XLA autotuner is disabled to fit memory; re-enable once (1)+(2) reduce it.
+This build also lacks cylinder-box collision, so cylinder distractors must be
+meshed or excluded.
 
 A full in-graph port of mujoco_env.Scene's physics: same compiled model, same
 contact-gated weld + latch, driven through mjx.step — with the weld gate, the

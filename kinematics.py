@@ -4,10 +4,6 @@ subset the MuJoCo sim twin needs (mujoco_env, mujoco_replay).
 The FK is hardcoded from the SO-101 URDF (so101_new_calib.urdf, TheRobotStudio
 SO-ARM100): recorded degrees ARE that URDF's joint angles (lerobot's calibration
 convention). The grasp point is the jaw center, on motor 6's axis.
-
-In the source monorepo this is the single source of the FK primitives; the workspace
-calibration grid + SVG/cv2 arrow rendering that plots WHERE the arm grasped live in a
-separate module that imports these, so the two never drift.
 """
 
 import glob
