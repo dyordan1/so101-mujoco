@@ -176,7 +176,8 @@ def sweep(
                 x, y = cube_xy(robot.pan_xy, r, a)
                 clutter = E.sample_distractors(
                     distractors, (x + dx, y + dy), robot.pan_xy,
-                    np.random.default_rng((int(r), int(a), k)),
+                    # +90 keeps the seed non-negative (azim spans -90..90); distinct per cell/trial
+                    np.random.default_rng((int(r), int(a) + 90, k)),
                 )
                 scene = E.Scene(
                     joints, (x + dx, y + dy), dyaw, TOTE_XY, home_deg, robot=robot,
@@ -272,6 +273,20 @@ def main():
         joints,
         args.seconds,
     )
+
+    # Re-randomize the distractor placement each loop iteration (advancing rng) so
+    # repeated attempts at this fixed cube pose see fresh clutter, not one frozen spot.
+    # Kinds stay as compiled; only positions move. No-op when --distractors 0.
+    distractor_rng = np.random.default_rng(0)
+
+    def next_attempt():
+        if args.distractors:
+            scene.place_distractors(
+                [(x, y, yaw) for _, x, y, yaw in
+                 E.sample_distractors(args.distractors, cxy, robot.pan_xy, distractor_rng)]
+            )
+        scene.reset()
+
     if args.view:
         # Keep the one viewer open and re-run the same placement on a loop: each rollout
         # returns on success/timeout, then scene.reset() clears all state (qpos, weld,
@@ -280,7 +295,7 @@ def main():
         with mujoco.viewer.launch_passive(scene.model, scene.data) as viewer:
             viewer.opt.geomgroup[E.COLLISION_GROUP] = 0
             while viewer.is_running():
-                scene.reset()
+                next_attempt()
                 viewer.sync()
                 rollout(
                     *args_common,
@@ -301,11 +316,12 @@ def main():
 
         try:
             while not stop:
-                scene.reset()
+                next_attempt()
                 rollout(*args_common, display=display)
         finally:
             cv2.destroyAllWindows()
     else:
+        next_attempt()
         rollout(*args_common)
 
 

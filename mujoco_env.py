@@ -675,6 +675,15 @@ class Scene:
         self._renderers = {}
         self.reset()
 
+    def place_distractors(self, placements):
+        """Move the compiled distractor bodies to new (x, y, yaw); their kinds stay as
+        built (geometry is baked at compile). Updates the stored init so a following
+        reset() seats them there. `placements` must match the distractor count."""
+        self._distractor_inits = [
+            (qadr, [x, y, init[2], *yaw_quat(yaw)])
+            for (qadr, init), (x, y, yaw) in zip(self._distractor_inits, placements)
+        ]
+
     def reset(self):
         """Home the arm, put the cube + tote at their start, clear weld + landed state."""
         mujoco.mj_resetData(self.model, self.data)
