@@ -253,10 +253,16 @@ def main():
 
     robot = E.build_robot(joints)
     cxy = cube_xy(robot.pan_xy, args.reach, azim)
-    clutter = E.sample_distractors(
-        args.distractors, cxy, robot.pan_xy, np.random.default_rng(0)
+    # Compile one distractor of every kind as a pool. Each attempt shows a random subset
+    # (args.distractors of them) in the cube's fan and parks the rest off-camera, so the
+    # visible clutter's kind AND position both re-randomize without recompiling — a
+    # persistent viewer can't swap geometry, only move bodies.
+    pool = list(E.DISTRACTOR_KINDS)
+    PARK = (5.0, 5.0, 0.0)  # far off-scene: outside every camera, harmless
+    scene = E.Scene(
+        joints, cxy, 0.0, TOTE_XY, home_deg, robot=robot,
+        distractors=[(k, PARK[0], PARK[1], PARK[2]) for k in pool],
     )
-    scene = E.Scene(joints, cxy, 0.0, TOTE_XY, home_deg, robot=robot, distractors=clutter)
     print(
         f"loaded policy on {device}; task={task!r}; cube reach={args.reach} azim={azim}"
         f" -> world {tuple(round(v, 3) for v in cxy)}"
@@ -274,17 +280,19 @@ def main():
         args.seconds,
     )
 
-    # Re-randomize the distractor placement each loop iteration (advancing rng) so
-    # repeated attempts at this fixed cube pose see fresh clutter, not one frozen spot.
-    # Kinds stay as compiled; only positions move. No-op when --distractors 0.
+    # Re-randomize the clutter each loop iteration (advancing rng): sample which kinds
+    # show + where, place those in the fan, park the rest. No-op when --distractors 0.
     distractor_rng = np.random.default_rng(0)
 
     def next_attempt():
         if args.distractors:
-            scene.place_distractors(
-                [(x, y, yaw) for _, x, y, yaw in
-                 E.sample_distractors(args.distractors, cxy, robot.pan_xy, distractor_rng)]
-            )
+            chosen = {
+                kind: (x, y, yaw)
+                for kind, x, y, yaw in E.sample_distractors(
+                    args.distractors, cxy, robot.pan_xy, distractor_rng
+                )
+            }
+            scene.place_distractors([chosen.get(k, PARK) for k in pool])
         scene.reset()
 
     if args.view:
