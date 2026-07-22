@@ -38,7 +38,7 @@ CALIBRATION = HERE / "calib" / "calibration.json"
 TOTE_XY = (0.0, -0.384)  # measured release cluster centre (m)
 RENDER_HW = (480, 640)  # match the recorded 4:3 frames; the policy preprocessor resizes
 AZIM_LIMIT = (
-    30.0  # cube kept within ±this of straight-ahead (real workspace is centred)
+    90.0  # cube kept within ±this of straight-ahead (real workspace is centred)
 )
 # --sweep eval grid: cube placements (cm reach × deg azimuth across the workspace).
 # 15/25 cm are the trained rings, 20 the interpolation test.
@@ -148,10 +148,14 @@ def grid_display(raw):
     return cv2.waitKey(1) == 27
 
 
-def sweep(policy, pre, post, ds_meta, task, device, joints, home_deg, seconds, view=False):
+def sweep(
+    policy, pre, post, ds_meta, task, device, joints, home_deg, seconds,
+    view=False, distractors=0,
+):
     """Roll the policy out over a reach×azimuth grid of cube placements and print the
     success rate — the sim eval, vs a single --reach/--azim rollout. With `view`, each
-    placement plays in the mjpython 3D viewer (a fresh window per cell)."""
+    placement plays in the mjpython 3D viewer (a fresh window per cell). `distractors`
+    seeds that many clutter objects into each cell's fan (seeded per trial)."""
     # Same jitter offsets reused for every cell (seeded → reproducible): the first is
     # the exact placement, the rest are ±SWEEP_JITTER_M so a cell's rate reflects
     # robustness to placement, not one lucky pose.
@@ -167,11 +171,16 @@ def sweep(policy, pre, post, ds_meta, task, device, joints, home_deg, seconds, v
     for r in SWEEP_REACHES:
         for a in SWEEP_AZIMS:
             hits = 0
-            for dx, dy, dyaw in offsets:
+            for k, (dx, dy, dyaw) in enumerate(offsets):
                 robot = E.build_robot(joints)  # fresh spec per trial (Scene mutates it)
                 x, y = cube_xy(robot.pan_xy, r, a)
+                clutter = E.sample_distractors(
+                    distractors, (x + dx, y + dy), robot.pan_xy,
+                    np.random.default_rng((int(r), int(a), k)),
+                )
                 scene = E.Scene(
-                    joints, (x + dx, y + dy), dyaw, TOTE_XY, home_deg, robot=robot
+                    joints, (x + dx, y + dy), dyaw, TOTE_XY, home_deg, robot=robot,
+                    distractors=clutter,
                 )
                 args = (scene, policy, pre, post, ds_meta, task, device, joints, seconds)
                 if view:
@@ -215,6 +224,9 @@ def main():
         action="store_true",
         help="eval: sweep a placement grid, report success rate",
     )
+    ap.add_argument(
+        "--distractors", type=int, default=0, help="clutter objects in the cube's fan"
+    )
     args = ap.parse_args()
 
     if torch.cuda.is_available():
@@ -230,7 +242,7 @@ def main():
     if args.sweep:
         sweep(
             policy, pre, post, ds_meta, task, device, joints, home_deg,
-            args.seconds, view=args.view,
+            args.seconds, view=args.view, distractors=args.distractors,
         )
         return
 
@@ -240,7 +252,10 @@ def main():
 
     robot = E.build_robot(joints)
     cxy = cube_xy(robot.pan_xy, args.reach, azim)
-    scene = E.Scene(joints, cxy, 0.0, TOTE_XY, home_deg, robot=robot)
+    clutter = E.sample_distractors(
+        args.distractors, cxy, robot.pan_xy, np.random.default_rng(0)
+    )
+    scene = E.Scene(joints, cxy, 0.0, TOTE_XY, home_deg, robot=robot, distractors=clutter)
     print(
         f"loaded policy on {device}; task={task!r}; cube reach={args.reach} azim={azim}"
         f" -> world {tuple(round(v, 3) for v in cxy)}"
@@ -258,17 +273,36 @@ def main():
         args.seconds,
     )
     if args.view:
+        # Keep the one viewer open and re-run the same placement on a loop: each rollout
+        # returns on success/timeout, then scene.reset() clears all state (qpos, weld,
+        # landed, cube back to its init pose) in place so the window persists. Closing
+        # the viewer drops the display lambda's guard, ending the rollout and the loop.
         with mujoco.viewer.launch_passive(scene.model, scene.data) as viewer:
             viewer.opt.geomgroup[E.COLLISION_GROUP] = 0
-            rollout(
-                *args_common,
-                display=lambda _raw: (viewer.sync(), not viewer.is_running())[1],
-            )
+            while viewer.is_running():
+                scene.reset()
+                viewer.sync()
+                rollout(
+                    *args_common,
+                    display=lambda _raw: (viewer.sync(), not viewer.is_running())[1],
+                )
     elif args.grid:
         import cv2
 
+        # Same loop as --view: re-run the placement until the user quits. cv2 has no
+        # "window open" query, so latch Esc (grid_display returns True) to end the loop;
+        # success/timeout just falls through to scene.reset() and another rollout.
+        stop = False
+
+        def display(raw):
+            nonlocal stop
+            stop = grid_display(raw)
+            return stop
+
         try:
-            rollout(*args_common, display=grid_display)
+            while not stop:
+                scene.reset()
+                rollout(*args_common, display=display)
         finally:
             cv2.destroyAllWindows()
     else:
