@@ -38,6 +38,11 @@ from pathlib import Path
 # no DISPLAY) is untouched. Reproducible: no env var to remember at launch.
 if sys.platform == "linux" and not os.environ.get("DISPLAY"):
     os.environ.setdefault("MUJOCO_GL", "egl")
+    # On a headless GPU box, mujoco's EGL otherwise queries EGL_DEFAULT_DISPLAY,
+    # which needs an X display and fails; pin the EGL *device* so it renders on
+    # the GPU. Device 0 is the NVIDIA EGL device on a typical node (a mesa/DRI
+    # card may sit at another index); override MUJOCO_EGL_DEVICE_ID if not.
+    os.environ.setdefault("MUJOCO_EGL_DEVICE_ID", "0")
 
 import mujoco
 import numpy as np

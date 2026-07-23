@@ -18,6 +18,10 @@ import os
 import random
 from pathlib import Path
 
+# mujoco_env selects the offscreen GL backend (MUJOCO_GL / MUJOCO_EGL_DEVICE_ID)
+# as an import side effect — it MUST run before mujoco is first imported, so it
+# leads the mujoco imports below.
+import mujoco_env as E  # noqa: E402  (side-effect: sets the GL backend)
 import mujoco.viewer
 import numpy as np
 import torch
@@ -27,7 +31,6 @@ from lerobot.utils.constants import OBS_STR
 from lerobot.utils.feature_utils import build_dataset_frame
 
 import model_adapter  # sibling: loads a checkpoint in either supported layout
-import mujoco_env as E
 
 HERE = Path(__file__).resolve().parent
 
@@ -67,11 +70,9 @@ SWEEP_YAW_DEG = (
 
 
 def load_policy(ckpt, device):
-    """Load policy + saved pre/post processors, repinned to `device`. Mirrors
-    eval-policy.py's load (the real-arm path), touches no hardware."""
-    repo_id = json.loads(Path(ckpt, "train_config.json").read_text())["dataset"][
-        "repo_id"
-    ]
+    """Load policy + saved pre/post processors, repinned to `device`, touches no
+    hardware."""
+    repo_id = model_adapter.dataset_repo_id(ckpt)
     # Use the checkpoint's own repo_id; read from a local datasets/<name> copy if one
     # exists (downloaded), else let LeRobot pull it from the Hub.
     local = DATASETS / repo_id.split("/")[-1]

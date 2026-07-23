@@ -39,6 +39,17 @@ def _is_accelerate_ckpt(ckpt: Path) -> bool:
     return not (ckpt / "config.json").exists() and (ckpt / "model.safetensors").exists()
 
 
+def dataset_repo_id(ckpt) -> str:
+    """The training dataset's repo_id, read from either checkpoint layout's
+    train_config.json — a LeRobot checkpoint stores it at `dataset.repo_id`; an
+    accelerate-style checkpoint (which may train on a mixture) at
+    `dataset_mixture.datasets[0].repo_id`."""
+    tc = json.loads((Path(ckpt) / "train_config.json").read_text())
+    if "dataset" in tc:
+        return tc["dataset"]["repo_id"]
+    return tc["dataset_mixture"]["datasets"][0]["repo_id"]
+
+
 def load_policy(ckpt, ds_meta, device, *, n_action_steps=None, compile_model=False):
     """Return (policy, preprocessor, postprocessor, cfg) for the checkpoint,
     detecting its layout. `ds_meta` is the LeRobotDatasetMetadata of the dataset
