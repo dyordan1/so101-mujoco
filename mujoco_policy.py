@@ -135,8 +135,9 @@ def rollout(
     print(f"done: success={scene.landed}")
 
 
-def grid_display(raw):
-    """cv2 row of the three sim cameras the policy sees (top | wrist | side). Esc stops."""
+def grid_frame(raw):
+    """BGR row of the three sim cameras the policy sees (top | wrist | side), labelled.
+    Shared by the live cv2 window (grid_display) and the MP4 recorder (record)."""
     import cv2
 
     tiles = []
@@ -156,8 +157,55 @@ def grid_display(raw):
             1,
         )
         tiles.append(bgr)
-    cv2.imshow("policy view (top | wrist | side)", np.hstack(tiles))
+    return np.hstack(tiles)
+
+
+def grid_display(raw):
+    """cv2 row of the three sim cameras the policy sees (top | wrist | side). Esc stops."""
+    import cv2
+
+    cv2.imshow("policy view (top | wrist | side)", grid_frame(raw))
     return cv2.waitKey(1) == 27
+
+
+# A handful of representative placements for --record: easy (close/centre) → hard
+# (far/edge), so a few clips give a read on the policy's behaviour across the
+# workspace without recording the whole sweep grid.
+RECORD_CELLS = ((15.0, 0.0), (20.0, 0.0), (20.0, -60.0), (25.0, 0.0), (25.0, 60.0))
+
+
+def record(policy, pre, post, ds_meta, task, device, joints, home_deg, seconds, out_dir):
+    """Headless counterpart to --view: render each RECORD_CELLS placement to its own MP4
+    (the top|wrist|side grid the policy sees) so the behaviour can be watched offline —
+    the GPU renders frames, no display needed."""
+    import cv2
+
+    out = Path(out_dir)
+    out.mkdir(parents=True, exist_ok=True)
+    for r, a in RECORD_CELLS:
+        robot = E.build_robot(joints)
+        scene = E.Scene(
+            joints, cube_xy(robot.pan_xy, r, a), 0.0, TOTE_XY, home_deg,
+            robot=robot, distractors=[],
+        )
+        path = str(out / f"reach{r:.0f}_azim{a:+.0f}.mp4")
+        writer = None
+
+        def display(raw, path=path):
+            nonlocal writer
+            frame = grid_frame(raw)
+            if writer is None:
+                h, w = frame.shape[:2]
+                writer = cv2.VideoWriter(
+                    path, cv2.VideoWriter_fourcc(*"mp4v"), 30, (w, h)
+                )
+            writer.write(frame)
+            return False
+
+        rollout(scene, policy, pre, post, ds_meta, task, device, joints, seconds, display=display)
+        if writer is not None:
+            writer.release()
+        print(f"recorded {path}  (landed={scene.landed})", flush=True)
 
 
 def sweep(
@@ -273,6 +321,11 @@ def main():
     ap.add_argument(
         "--distractors", type=int, default=0, help="clutter objects in the cube's fan"
     )
+    ap.add_argument(
+        "--record",
+        metavar="DIR",
+        help="headless: render a handful of placements to MP4s in DIR (watch offline)",
+    )
     args = ap.parse_args()
 
     if torch.cuda.is_available():
@@ -298,6 +351,13 @@ def main():
             args.seconds,
             view=args.view,
             distractors=args.distractors,
+        )
+        return
+
+    if args.record:
+        record(
+            policy, pre, post, ds_meta, task, device, joints, home_deg,
+            args.seconds, args.record,
         )
         return
 
